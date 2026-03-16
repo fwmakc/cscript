@@ -237,4 +237,79 @@ describe("CScriptCompiler", () => {
       expect(result.code).toContain("p->x");
     });
   });
+
+  describe("generics", () => {
+    it("generates monomorphized functions", () => {
+      const code = `
+        function identity<T>(x: T): T {
+          return x;
+        }
+        function main(): void {
+          let a = identity<i32>(42);
+        }
+      `;
+      const result = compiler.compile(code);
+      expect(result.code).toContain("int32_t identity_i32(int32_t x)");
+    });
+
+    it("generates multiple specializations", () => {
+      const code = `
+        function identity<T>(x: T): T {
+          return x;
+        }
+        function main(): void {
+          let a = identity<i32>(42);
+          let b = identity<f64>(3.14);
+        }
+      `;
+      const result = compiler.compile(code);
+      expect(result.code).toContain("int32_t identity_i32(int32_t x)");
+      expect(result.code).toContain("double identity_f64(double x)");
+    });
+
+    it("generates generic structs", () => {
+      const code = `
+        interface Pair<T, U> {
+          first: T,
+          second: U,
+        }
+        function main(): void {
+          let p: Pair<i32, f64> = { first: 1, second: 2.0 };
+        }
+      `;
+      const result = compiler.compile(code);
+      expect(result.code).toContain("typedef struct {");
+      expect(result.code).toContain("int32_t first;");
+      expect(result.code).toContain("double second;");
+      expect(result.code).toContain("} Pair_i32_f64;");
+    });
+
+    it("uses dot for value struct access", () => {
+      const code = `
+        interface Point {
+          x: f64,
+        }
+        function main(): void {
+          let p: Point = { x: 1.0 };
+          print("%f", p.x);
+        }
+      `;
+      const result = compiler.compile(code);
+      expect(result.code).toContain("p.x");
+    });
+
+    it("uses arrow for pointer struct access", () => {
+      const code = `
+        class Player {
+          x: i32 = 0,
+        }
+        function main(): void {
+          let p = new Player();
+          print("%d", p.x);
+        }
+      `;
+      const result = compiler.compile(code);
+      expect(result.code).toContain("p->x");
+    });
+  });
 });

@@ -90,6 +90,8 @@ int32_t main(void) {
 
 ## Ownership & Borrowing
 
+### Move Semantics
+
 Переменные некопируемых типов (string, structs) перемещаются при передаче в функцию:
 
 ```typescript
@@ -114,6 +116,41 @@ function main(): i32 {
     print("%s\n", &s); // OK
     return 0;
 }
+```
+
+### Borrowing Rules
+
+1. **Много immutable ИЛИ один mutable borrow:**
+```typescript
+let mut s: string = "hello";
+let r1 = &s;     // OK
+let r2 = &s;     // OK - много immutable
+// let r3 = &mut s; // ERROR - нельзя mutable при immutable
+```
+
+2. **Mutable borrow требует mutable переменную:**
+```typescript
+const s: string = "hello";
+// &mut s  // ERROR: cannot borrow as mutable
+```
+
+3. **Borrows заканчиваются при выходе из scope:**
+```typescript
+let mut s: string = "hello";
+{
+    read(&s);  // borrow начинается
+}              // borrow заканчивается
+write(&mut s); // OK - предыдущий borrow завершён
+```
+
+### Copy Types
+
+Примитивные типы (`i32`, `f64`, `bool`, `number`) копируются, не перемещаются:
+
+```typescript
+let x: i32 = 10;
+take(x);
+take(x);  // OK - i32 is Copy
 ```
 
 ## Native функции
@@ -202,8 +239,8 @@ void Player_move(Player* self, int32_t dx, int32_t dy) {
 - [x] Тесты (vitest)
 - [x] Struct declarations
 - [x] Class declarations (struct + methods)
-- [ ] Полный borrow checker (lifetimes)
-- [ ] Generics (мономорфизация)
+- [x] Generics (мономорфизация)
+- [x] Полный borrow checker (lifetimes, mutable/immutable borrows)
 - [ ] CMake генерация
 
 ## License

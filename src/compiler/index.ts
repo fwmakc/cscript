@@ -28,6 +28,7 @@ export interface StructInfo {
   fields: FieldInfo[];
   isClass: boolean;
   defaults?: Map<string, string>;
+  typeParams?: string[];
 }
 
 export interface MethodInfo {
@@ -37,16 +38,44 @@ export interface MethodInfo {
   body?: ts.Block;
 }
 
+export interface GenericFunctionInfo {
+  name: string;
+  typeParams: string[];
+  params: { name: string; type: string }[];
+  returnType: string;
+  body?: ts.Block;
+}
+
+export interface Monomorphization {
+  originalName: string;
+  typeArgs: string[];
+  specialized: string;
+}
+
+export interface StructMonomorphization {
+  originalName: string;
+  typeArgs: string[];
+  specialized: string;
+}
+
 export class CScriptCompiler {
   private nativeFunctionMap: Map<string, string> = new Map();
   private structTypes: Map<string, StructInfo> = new Map();
   private classMethods: Map<string, MethodInfo[]> = new Map();
+  private genericFunctions: Map<string, GenericFunctionInfo> = new Map();
+  private monomorphizations: Map<string, Monomorphization> = new Map();
+  private structMonomorphizations: Map<string, StructMonomorphization> = new Map();
+  private variableTypes: Map<string, string> = new Map();
 
   compile(sourceCode: string, options?: CompileOptions): CompileResult {
     const errors: CompileError[] = [];
     this.nativeFunctionMap.clear();
     this.structTypes.clear();
     this.classMethods.clear();
+    this.genericFunctions.clear();
+    this.monomorphizations.clear();
+    this.structMonomorphizations.clear();
+    this.variableTypes.clear();
     
     const sourceFile = ts.createSourceFile(
       options?.inputFile || "input.cs",
@@ -59,6 +88,8 @@ export class CScriptCompiler {
     this.collectNativeFunctions(sourceFile);
     this.collectStructs(sourceFile);
     this.collectClasses(sourceFile);
+    this.collectGenericFunctions(sourceFile);
+    this.collectMonomorphizations(sourceFile);
 
     const diagnostics: CompileError[] = [];
     ts.forEachChild(sourceFile, (node) => {
@@ -90,6 +121,7 @@ export class CScriptCompiler {
       if (ts.isInterfaceDeclaration(node)) {
         const name = node.name.getText(sourceFile);
         const fields: FieldInfo[] = [];
+        const typeParams = node.typeParameters?.map(tp => tp.name.getText(sourceFile)) ?? [];
         
         ts.forEachChild(node, (member) => {
           if (ts.isPropertySignature(member) && member.name && member.type) {
@@ -100,7 +132,7 @@ export class CScriptCompiler {
           }
         });
         
-        this.structTypes.set(name, { name, fields, isClass: false });
+        this.structTypes.set(name, { name, fields, isClass: false, typeParams });
       }
     });
   }
@@ -143,6 +175,74 @@ export class CScriptCompiler {
     });
   }
 
+  private collectGenericFunctions(sourceFile: ts.SourceFile): void {
+    ts.forEachChild(sourceFile, (node) => {
+      if (ts.isFunctionDeclaration(node) && node.name && node.typeParameters) {
+        const name = node.name.getText(sourceFile);
+        const typeParams = node.typeParameters.map(tp => tp.name.getText(sourceFile));
+        const params = node.parameters.map(p => ({
+          name: p.name.getText(sourceFile),
+          type: p.type?.getText(sourceFile) ?? "void",
+        }));
+        const returnType = node.type?.getText(sourceFile) ?? "void";
+        
+        this.genericFunctions.set(name, {
+          name,
+          typeParams,
+          params,
+          returnType,
+          body: node.body,
+        });
+      }
+    });
+  }
+
+  private collectMonomorphizations(sourceFile: ts.SourceFile): void {
+    const visit = (node: ts.Node) => {
+      if (ts.isCallExpression(node) && node.typeArguments && ts.isIdentifier(node.expression)) {
+        const funcName = node.expression.getText(sourceFile);
+        const genericFunc = this.genericFunctions.get(funcName);
+        
+        if (genericFunc) {
+          const typeArgs = node.typeArguments.map(ta => ta.getText(sourceFile));
+          this.monomorphizeFunction(genericFunc, typeArgs, sourceFile);
+        }
+      }
+
+      if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) && node.typeArguments) {
+        const structName = node.typeName.getText(sourceFile);
+        const structInfo = this.structTypes.get(structName);
+        
+        if (structInfo && structInfo.typeParams && structInfo.typeParams.length > 0) {
+          const typeArgs = node.typeArguments.map(ta => ta.getText(sourceFile));
+          this.monomorphizeStruct(structInfo, typeArgs);
+        }
+      }
+      
+      ts.forEachChild(node, visit);
+    };
+    
+    ts.forEachChild(sourceFile, visit);
+  }
+
+  private monomorphizeStruct(
+    structInfo: StructInfo,
+    typeArgs: string[]
+  ): StructMonomorphization {
+    const key = this.getMonomorphizationKey(structInfo.name, typeArgs);
+    const existing = this.structMonomorphizations.get(key);
+    if (existing) return existing;
+
+    const specialized = this.mangleName(structInfo.name, typeArgs);
+    const mono: StructMonomorphization = {
+      originalName: structInfo.name,
+      typeArgs,
+      specialized,
+    };
+    this.structMonomorphizations.set(key, mono);
+    return mono;
+  }
+
   private collectNativeFunctions(sourceFile: ts.SourceFile): void {
     ts.forEachChild(sourceFile, (node) => {
       if (ts.isFunctionDeclaration(node) && this.isDeclareFunction(node)) {
@@ -173,8 +273,18 @@ export class CScriptCompiler {
     lines.push("");
 
     for (const [name, structInfo] of this.structTypes) {
-      lines.push(this.generateStruct(structInfo));
-      lines.push("");
+      if (!structInfo.typeParams || structInfo.typeParams.length === 0) {
+        lines.push(this.generateStruct(structInfo));
+        lines.push("");
+      }
+    }
+
+    for (const [key, mono] of this.structMonomorphizations) {
+      const structInfo = this.structTypes.get(mono.originalName);
+      if (structInfo) {
+        lines.push(this.generateMonomorphizedStruct(structInfo, mono.typeArgs));
+        lines.push("");
+      }
     }
 
     for (const [className, methods] of this.classMethods) {
@@ -190,12 +300,22 @@ export class CScriptCompiler {
       }
     }
 
+    for (const [key, mono] of this.monomorphizations) {
+      const funcInfo = this.genericFunctions.get(mono.originalName);
+      if (funcInfo) {
+        lines.push(this.generateMonomorphizedFunction(funcInfo, mono.typeArgs, sourceFile));
+        lines.push("");
+      }
+    }
+
     const nativeDecls: string[] = [];
     
     ts.forEachChild(sourceFile, (node) => {
       if (ts.isFunctionDeclaration(node)) {
         if (this.isDeclareFunction(node)) {
           nativeDecls.push(this.generateNativeDeclaration(node, sourceFile));
+        } else if (node.typeParameters) {
+          // Generic functions are handled via monomorphization
         } else {
           lines.push(this.generateFunction(node, sourceFile));
           lines.push("");
@@ -221,6 +341,26 @@ export class CScriptCompiler {
     }
     
     lines.push(`} ${structInfo.name};`);
+    return lines.join("\n");
+  }
+
+  private generateMonomorphizedStruct(structInfo: StructInfo, typeArgs: string[]): string {
+    const typeArgMap = new Map<string, string>();
+    structInfo.typeParams?.forEach((param, i) => {
+      typeArgMap.set(param, typeArgs[i]);
+    });
+
+    const lines: string[] = [];
+    const name = this.mangleName(structInfo.name, typeArgs);
+    lines.push(`typedef struct {`);
+    
+    for (const field of structInfo.fields) {
+      const substitutedType = this.substituteType(field.type, typeArgMap);
+      const cType = this.mapType(substitutedType);
+      lines.push(`    ${cType} ${field.name};`);
+    }
+    
+    lines.push(`} ${name};`);
     return lines.join("\n");
   }
 
@@ -365,6 +505,13 @@ export class CScriptCompiler {
   }
 
   private mapType(tsType: string): string {
+    const genericMatch = tsType.match(/^(\w+)<(.+)>$/);
+    if (genericMatch) {
+      const baseName = genericMatch[1];
+      const typeArgs = genericMatch[2].split(",").map(t => t.trim());
+      return this.mangleName(baseName, typeArgs);
+    }
+
     const typeMap: Record<string, string> = {
       number: "int32_t",
       i8: "int8_t",
@@ -448,21 +595,27 @@ export class CScriptCompiler {
     const name = decl.name.getText(sourceFile);
     
     let type = "int32_t";
+    let originalType = "i32";
     if (decl.type) {
-      type = this.mapType(decl.type.getText(sourceFile));
+      originalType = decl.type.getText(sourceFile);
+      type = this.mapType(originalType);
     }
 
     if (decl.initializer) {
       if (ts.isNewExpression(decl.initializer)) {
         const className = decl.initializer.expression.getText(sourceFile);
         type = `${className}*`;
+        originalType = `${className}*`;
+        this.variableTypes.set(name, originalType);
         return `${type} ${name} = ${className}_new();`;
       }
       
+      this.variableTypes.set(name, originalType);
       const init = this.generateExpression(decl.initializer, sourceFile);
       return `${type} ${name} = ${init};`;
     }
 
+    this.variableTypes.set(name, originalType);
     return `${type} ${name};`;
   }
 
@@ -502,7 +655,16 @@ export class CScriptCompiler {
     const obj = expr.expression.getText(sourceFile);
     const prop = expr.name.getText(sourceFile);
     
-    return `${obj}->${prop}`;
+    const varType = this.variableTypes.get(obj);
+    if (varType && varType.endsWith("*")) {
+      return `${obj}->${prop}`;
+    }
+    return `${obj}.${prop}`;
+  }
+
+  private isPointerVariable(varName: string, sourceFile: ts.SourceFile): boolean {
+    const varType = this.variableTypes.get(varName);
+    return varType !== undefined && varType.endsWith("*");
   }
 
   private generateCallExpression(
@@ -513,6 +675,24 @@ export class CScriptCompiler {
     
     if (ts.isPropertyAccessExpression(callee)) {
       return this.generateMethodCall(expr, callee, sourceFile);
+    }
+
+    if (ts.isCallExpression(expr) && expr.typeArguments) {
+      if (ts.isIdentifier(expr.expression)) {
+        const funcName = expr.expression.getText(sourceFile);
+        const genericFunc = this.genericFunctions.get(funcName);
+        
+        if (genericFunc) {
+          const typeArgs = expr.typeArguments.map(ta => ta.getText(sourceFile));
+          const mono = this.monomorphizeFunction(genericFunc, typeArgs, sourceFile);
+          
+          const args = expr.arguments
+            .map(arg => this.generateExpression(arg, sourceFile))
+            .join(", ");
+          
+          return `${mono.specialized}(${args})`;
+        }
+      }
     }
     
     let funcName: string;
@@ -550,5 +730,109 @@ export class CScriptCompiler {
       .map(arg => this.generateExpression(arg, sourceFile))
       .join(", ");
     return `${obj}.${methodName}(${args})`;
+  }
+
+  private substituteType(type: string, typeArgs: Map<string, string>): string {
+    let result = type;
+    for (const [param, arg] of typeArgs) {
+      result = result.replace(new RegExp(`\\b${param}\\b`, "g"), arg);
+    }
+    return result;
+  }
+
+  private mangleName(baseName: string, typeArgs: string[]): string {
+    if (typeArgs.length === 0) return baseName;
+    const suffix = typeArgs.map(t => t.replace(/[^a-zA-Z0-9]/g, "_")).join("_");
+    return `${baseName}_${suffix}`;
+  }
+
+  private getMonomorphizationKey(name: string, typeArgs: string[]): string {
+    return `${name}<${typeArgs.join(", ")}>`;
+  }
+
+  private monomorphizeFunction(
+    funcInfo: GenericFunctionInfo,
+    typeArgs: string[],
+    sourceFile: ts.SourceFile
+  ): Monomorphization {
+    const key = this.getMonomorphizationKey(funcInfo.name, typeArgs);
+    const existing = this.monomorphizations.get(key);
+    if (existing) return existing;
+
+    const specialized = this.mangleName(funcInfo.name, typeArgs);
+    const mono: Monomorphization = {
+      originalName: funcInfo.name,
+      typeArgs,
+      specialized,
+    };
+    this.monomorphizations.set(key, mono);
+    return mono;
+  }
+
+  private generateMonomorphizedFunction(
+    funcInfo: GenericFunctionInfo,
+    typeArgs: string[],
+    sourceFile: ts.SourceFile
+  ): string {
+    const typeArgMap = new Map<string, string>();
+    funcInfo.typeParams.forEach((param, i) => {
+      typeArgMap.set(param, typeArgs[i]);
+    });
+
+    const name = this.mangleName(funcInfo.name, typeArgs);
+    const returnType = this.mapType(this.substituteType(funcInfo.returnType, typeArgMap));
+    const params = funcInfo.params.map(p => 
+      `${this.mapType(this.substituteType(p.type, typeArgMap))} ${p.name}`
+    ).join(", ");
+
+    let body = "  // no body";
+    if (funcInfo.body) {
+      body = this.generateMonomorphizedBody(funcInfo.body, typeArgMap, sourceFile);
+    }
+
+    return `${returnType} ${name}(${params}) {\n${body}\n}`;
+  }
+
+  private generateMonomorphizedBody(
+    body: ts.Block,
+    typeArgMap: Map<string, string>,
+    sourceFile: ts.SourceFile
+  ): string {
+    const statements: string[] = [];
+    
+    ts.forEachChild(body, (node) => {
+      if (ts.isStatement(node)) {
+        const generated = this.generateStatementWithTypeSubstitution(node, typeArgMap, sourceFile);
+        if (generated) statements.push("  " + generated);
+      }
+    });
+
+    return statements.join("\n");
+  }
+
+  private generateStatementWithTypeSubstitution(
+    stmt: ts.Statement,
+    typeArgMap: Map<string, string>,
+    sourceFile: ts.SourceFile
+  ): string {
+    if (ts.isVariableStatement(stmt)) {
+      const decl = stmt.declarationList.declarations[0];
+      const name = decl.name.getText(sourceFile);
+      
+      let type = "int32_t";
+      if (decl.type) {
+        const originalType = decl.type.getText(sourceFile);
+        type = this.mapType(this.substituteType(originalType, typeArgMap));
+      }
+
+      if (decl.initializer) {
+        const init = this.generateExpression(decl.initializer, sourceFile);
+        return `${type} ${name} = ${init};`;
+      }
+
+      return `${type} ${name};`;
+    }
+    
+    return this.generateStatement(stmt, sourceFile);
   }
 }

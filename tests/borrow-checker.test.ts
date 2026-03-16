@@ -72,4 +72,45 @@ describe("BorrowChecker", () => {
       expect(errors).toHaveLength(0);
     });
   });
+
+  describe("borrowing rules", () => {
+    it("allows multiple immutable borrows", () => {
+      const code = `
+        function read(s: string): void {}
+        function main(): void {
+          let s: string = "hello";
+          read(&s);
+          read(&s);
+          read(&s);
+        }
+      `;
+      const errors = check(code);
+      expect(errors).toHaveLength(0);
+    });
+
+    it("errors on mutable borrow of immutable variable", () => {
+      const code = `
+        function write(s: string): void {}
+        function main(): void {
+          const s: string = "hello";
+          write(&mut s);
+        }
+      `;
+      const errors = check(code);
+      expect(errors.length).toBeGreaterThan(0);
+    });
+
+    it("errors on borrow of moved value", () => {
+      const code = `
+        function take(s: string): void {}
+        function main(): void {
+          let s: string = "hello";
+          take(s);
+          let r = &s;
+        }
+      `;
+      const errors = check(code);
+      expect(errors.length).toBeGreaterThan(0);
+    });
+  });
 });
