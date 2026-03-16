@@ -25,13 +25,13 @@ export const COPY_TYPES = new Set([
 ]);
 
 export function mapType(tsType: string): string {
-  if (tsType.startsWith("&")) {
-    const innerType = tsType.slice(1).trim();
+  if (tsType.startsWith("&mut ")) {
+    const innerType = tsType.slice(5).trim();
     return `${mapType(innerType)}*`;
   }
   
-  if (tsType.startsWith("&mut ")) {
-    const innerType = tsType.slice(5).trim();
+  if (tsType.startsWith("&")) {
+    const innerType = tsType.slice(1).trim();
     return `${mapType(innerType)}*`;
   }
 
