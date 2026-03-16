@@ -14,7 +14,6 @@ export const TYPE_MAP: Record<string, string> = {
   void: "void",
   string: "char*",
   any: "void*",
-  null: "void*",
 };
 
 export const COPY_TYPES = new Set([

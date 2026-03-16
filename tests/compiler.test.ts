@@ -131,5 +131,15 @@ describe("CScriptCompiler", () => {
       const result = compiler.compile(code);
       expect(result.code).toContain("return 1 + 2 * 3");
     });
+
+    it("maps null to NULL", () => {
+      const code = `
+        function getNull(): string {
+          return null;
+        }
+      `;
+      const result = compiler.compile(code);
+      expect(result.code).toContain("return NULL");
+    });
   });
 });

@@ -275,6 +275,10 @@ export class CScriptCompiler {
     expr: ts.Expression,
     sourceFile: ts.SourceFile
   ): string {
+    if (expr.kind === ts.SyntaxKind.NullKeyword) {
+      return "NULL";
+    }
+    
     if (ts.isCallExpression(expr)) {
       return this.generateCallExpression(expr, sourceFile);
     }

@@ -54,8 +54,11 @@ int32_t main(void) {
 
 ## Типы
 
+### Примитивные
+
 | CScript | C Type |
 |---------|--------|
+| number | int32_t |
 | i8 | int8_t |
 | i16 | int16_t |
 | i32 | int32_t |
@@ -67,7 +70,23 @@ int32_t main(void) {
 | f32 | float |
 | f64 | double |
 | bool | bool |
+| void | void |
 | string | char* |
+| any | void* |
+
+### Ссылки
+
+| CScript | C Type |
+|---------|--------|
+| &T | T* |
+| &mut T | T* |
+| T \| null | T* |
+
+### Значения
+
+| CScript | C |
+|---------|---|
+| null | NULL |
 
 ## Ownership & Borrowing
 
@@ -114,6 +133,7 @@ declare function alloc(size: usize): void*;
 - [x] Генерация функций
 - [x] Borrow checker (move semantics)
 - [x] CLI: compile, check
+- [x] Тесты (vitest)
 - [ ] Struct declarations
 - [ ] Полный borrow checker (lifetimes)
 - [ ] Generics (мономорфизация)
