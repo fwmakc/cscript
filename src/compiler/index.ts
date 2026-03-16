@@ -18,12 +18,35 @@ export interface CompileOptions {
   checkOnly?: boolean;
 }
 
+export interface FieldInfo {
+  name: string;
+  type: string;
+}
+
+export interface StructInfo {
+  name: string;
+  fields: FieldInfo[];
+  isClass: boolean;
+  defaults?: Map<string, string>;
+}
+
+export interface MethodInfo {
+  name: string;
+  params: { name: string; type: string }[];
+  returnType: string;
+  body?: ts.Block;
+}
+
 export class CScriptCompiler {
   private nativeFunctionMap: Map<string, string> = new Map();
+  private structTypes: Map<string, StructInfo> = new Map();
+  private classMethods: Map<string, MethodInfo[]> = new Map();
 
   compile(sourceCode: string, options?: CompileOptions): CompileResult {
     const errors: CompileError[] = [];
     this.nativeFunctionMap.clear();
+    this.structTypes.clear();
+    this.classMethods.clear();
     
     const sourceFile = ts.createSourceFile(
       options?.inputFile || "input.cs",
@@ -34,6 +57,8 @@ export class CScriptCompiler {
     );
 
     this.collectNativeFunctions(sourceFile);
+    this.collectStructs(sourceFile);
+    this.collectClasses(sourceFile);
 
     const diagnostics: CompileError[] = [];
     ts.forEachChild(sourceFile, (node) => {
@@ -58,6 +83,64 @@ export class CScriptCompiler {
     const code = this.generateCode(sourceFile);
     
     return { code, errors };
+  }
+
+  private collectStructs(sourceFile: ts.SourceFile): void {
+    ts.forEachChild(sourceFile, (node) => {
+      if (ts.isInterfaceDeclaration(node)) {
+        const name = node.name.getText(sourceFile);
+        const fields: FieldInfo[] = [];
+        
+        ts.forEachChild(node, (member) => {
+          if (ts.isPropertySignature(member) && member.name && member.type) {
+            fields.push({
+              name: member.name.getText(sourceFile),
+              type: member.type.getText(sourceFile),
+            });
+          }
+        });
+        
+        this.structTypes.set(name, { name, fields, isClass: false });
+      }
+    });
+  }
+
+  private collectClasses(sourceFile: ts.SourceFile): void {
+    ts.forEachChild(sourceFile, (node) => {
+      if (ts.isClassDeclaration(node) && node.name) {
+        const name = node.name.getText(sourceFile);
+        const fields: FieldInfo[] = [];
+        const methods: MethodInfo[] = [];
+        const defaults: Map<string, string> = new Map();
+        
+        ts.forEachChild(node, (member) => {
+          if (ts.isPropertyDeclaration(member) && member.name) {
+            const fieldName = member.name.getText(sourceFile);
+            const fieldType = member.type?.getText(sourceFile) ?? "i32";
+            fields.push({ name: fieldName, type: fieldType });
+            
+            if (member.initializer) {
+              defaults.set(fieldName, member.initializer.getText(sourceFile));
+            }
+          }
+          
+          if (ts.isMethodDeclaration(member) && member.name) {
+            methods.push({
+              name: member.name.getText(sourceFile),
+              params: member.parameters.map(p => ({
+                name: p.name.getText(sourceFile),
+                type: p.type?.getText(sourceFile) ?? "void",
+              })),
+              returnType: member.type?.getText(sourceFile) ?? "void",
+              body: member.body,
+            });
+          }
+        });
+        
+        this.structTypes.set(name, { name, fields, isClass: true, defaults });
+        this.classMethods.set(name, methods);
+      }
+    });
   }
 
   private collectNativeFunctions(sourceFile: ts.SourceFile): void {
@@ -89,6 +172,24 @@ export class CScriptCompiler {
     lines.push("#include <stdbool.h>");
     lines.push("");
 
+    for (const [name, structInfo] of this.structTypes) {
+      lines.push(this.generateStruct(structInfo));
+      lines.push("");
+    }
+
+    for (const [className, methods] of this.classMethods) {
+      const structInfo = this.structTypes.get(className);
+      if (structInfo) {
+        lines.push(this.generateClassConstructor(structInfo, sourceFile));
+        lines.push("");
+        
+        for (const method of methods) {
+          lines.push(this.generateClassMethod(className, method, sourceFile));
+          lines.push("");
+        }
+      }
+    }
+
     const nativeDecls: string[] = [];
     
     ts.forEachChild(sourceFile, (node) => {
@@ -108,6 +209,94 @@ export class CScriptCompiler {
     }
 
     return lines.join("\n");
+  }
+
+  private generateStruct(structInfo: StructInfo): string {
+    const lines: string[] = [];
+    lines.push(`typedef struct {`);
+    
+    for (const field of structInfo.fields) {
+      const cType = this.mapType(field.type);
+      lines.push(`    ${cType} ${field.name};`);
+    }
+    
+    lines.push(`} ${structInfo.name};`);
+    return lines.join("\n");
+  }
+
+  private generateClassConstructor(structInfo: StructInfo, sourceFile: ts.SourceFile): string {
+    const lines: string[] = [];
+    const name = structInfo.name;
+    
+    lines.push(`${name}* ${name}_new() {`);
+    lines.push(`    ${name}* self = (${name}*)malloc(sizeof(${name}));`);
+    
+    for (const field of structInfo.fields) {
+      const defaultVal = structInfo.defaults?.get(field.name) ?? "0";
+      const expr = this.mapType(field.type) === "char*" ? `"${defaultVal}"` : defaultVal;
+      lines.push(`    self->${field.name} = ${expr};`);
+    }
+    
+    lines.push(`    return self;`);
+    lines.push(`}`);
+    
+    return lines.join("\n");
+  }
+
+  private generateClassMethod(
+    className: string,
+    method: MethodInfo,
+    sourceFile: ts.SourceFile
+  ): string {
+    const params = [`${className}* self`, ...method.params.map(p => `${this.mapType(p.type)} ${p.name}`)];
+    const returnType = this.mapType(method.returnType);
+    
+    let body = "    // no body";
+    if (method.body) {
+      body = this.generateClassMethodBody(method.body, sourceFile);
+    }
+    
+    return `${returnType} ${className}_${method.name}(${params.join(", ")}) {\n${body}\n}`;
+  }
+
+  private generateClassMethodBody(body: ts.Block, sourceFile: ts.SourceFile): string {
+    const statements: string[] = [];
+    
+    ts.forEachChild(body, (node) => {
+      if (ts.isStatement(node)) {
+        const generated = this.generateClassMethodStatement(node, sourceFile);
+        if (generated) statements.push("    " + generated);
+      }
+    });
+
+    return statements.join("\n");
+  }
+
+  private generateClassMethodStatement(stmt: ts.Statement, sourceFile: ts.SourceFile): string {
+    if (ts.isExpressionStatement(stmt)) {
+      const expr = stmt.expression;
+      
+      if (ts.isBinaryExpression(expr)) {
+        const left = expr.left.getText(sourceFile);
+        const right = this.generateExpression(expr.right, sourceFile);
+        
+        if (left.startsWith("this.")) {
+          const field = left.slice(5);
+          return `self->${field} ${expr.operatorToken.getText(sourceFile)} ${right};`;
+        }
+      }
+      
+      return `${this.generateExpression(expr, sourceFile)};`;
+    }
+    
+    if (ts.isReturnStatement(stmt)) {
+      if (stmt.expression) {
+        return `return ${this.generateExpression(stmt.expression, sourceFile)};`;
+      }
+      return "return;";
+    }
+    
+    return this.generateStatement(stmt, sourceFile);
   }
 
   private isDeclareFunction(node: ts.FunctionDeclaration): boolean {
@@ -264,6 +453,12 @@ export class CScriptCompiler {
     }
 
     if (decl.initializer) {
+      if (ts.isNewExpression(decl.initializer)) {
+        const className = decl.initializer.expression.getText(sourceFile);
+        type = `${className}*`;
+        return `${type} ${name} = ${className}_new();`;
+      }
+      
       const init = this.generateExpression(decl.initializer, sourceFile);
       return `${type} ${name} = ${init};`;
     }
@@ -279,8 +474,17 @@ export class CScriptCompiler {
       return "NULL";
     }
     
+    if (ts.isNewExpression(expr)) {
+      const className = expr.expression.getText(sourceFile);
+      return `${className}_new()`;
+    }
+    
     if (ts.isCallExpression(expr)) {
       return this.generateCallExpression(expr, sourceFile);
+    }
+    
+    if (ts.isPropertyAccessExpression(expr)) {
+      return this.generatePropertyAccess(expr, sourceFile);
     }
     
     if (ts.isIdentifier(expr)) {
@@ -291,11 +495,26 @@ export class CScriptCompiler {
     return expr.getText(sourceFile);
   }
 
+  private generatePropertyAccess(
+    expr: ts.PropertyAccessExpression,
+    sourceFile: ts.SourceFile
+  ): string {
+    const obj = expr.expression.getText(sourceFile);
+    const prop = expr.name.getText(sourceFile);
+    
+    return `${obj}->${prop}`;
+  }
+
   private generateCallExpression(
     expr: ts.CallExpression,
     sourceFile: ts.SourceFile
   ): string {
     const callee = expr.expression;
+    
+    if (ts.isPropertyAccessExpression(callee)) {
+      return this.generateMethodCall(expr, callee, sourceFile);
+    }
+    
     let funcName: string;
     
     if (ts.isIdentifier(callee)) {
@@ -310,5 +529,26 @@ export class CScriptCompiler {
       .join(", ");
     
     return `${funcName}(${args})`;
+  }
+
+  private generateMethodCall(
+    callExpr: ts.CallExpression,
+    callee: ts.PropertyAccessExpression,
+    sourceFile: ts.SourceFile
+  ): string {
+    const obj = callee.expression.getText(sourceFile);
+    const methodName = callee.name.getText(sourceFile);
+    
+    for (const [className, methods] of this.classMethods) {
+      if (methods.some(m => m.name === methodName)) {
+        const args = [obj, ...callExpr.arguments.map(arg => this.generateExpression(arg, sourceFile))];
+        return `${className}_${methodName}(${args.join(", ")})`;
+      }
+    }
+    
+    const args = callExpr.arguments
+      .map(arg => this.generateExpression(arg, sourceFile))
+      .join(", ");
+    return `${obj}.${methodName}(${args})`;
   }
 }

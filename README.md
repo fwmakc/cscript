@@ -126,6 +126,72 @@ declare function print(format: string, ...args: any): void;
 declare function alloc(size: usize): void*;
 ```
 
+## Structs
+
+```typescript
+interface Point {
+    x: f64,
+    y: f64,
+}
+
+function main(): i32 {
+    let p: Point = { x: 10.5, y: 20.3 };
+    print("Point: %f, %f\n", p.x, p.y);
+    return 0;
+}
+```
+
+Генерирует:
+
+```c
+typedef struct {
+    double x;
+    double y;
+} Point;
+```
+
+## Classes
+
+```typescript
+class Player {
+    x: i32 = 0,
+    y: i32 = 0,
+    
+    move(dx: i32, dy: i32): void {
+        this.x += dx;
+        this.y += dy;
+    }
+}
+
+function main(): i32 {
+    let player = new Player();
+    player.move(10, 20);
+    print("Player: %d, %d\n", player.x, player.y);
+    return 0;
+}
+```
+
+Генерирует:
+
+```c
+typedef struct {
+    int32_t x;
+    int32_t y;
+} Player;
+
+Player* Player_new() {
+    Player* self = (Player*)malloc(sizeof(Player));
+    self->x = 0;
+    self->y = 0;
+    return self;
+}
+
+void Player_move(Player* self, int32_t dx, int32_t dy) {
+    self->x += dx;
+    self->y += dy;
+}
+```
+
 ## Roadmap
 
 - [x] Базовый парсинг (TS Compiler API)
@@ -134,7 +200,8 @@ declare function alloc(size: usize): void*;
 - [x] Borrow checker (move semantics)
 - [x] CLI: compile, check
 - [x] Тесты (vitest)
-- [ ] Struct declarations
+- [x] Struct declarations
+- [x] Class declarations (struct + methods)
 - [ ] Полный borrow checker (lifetimes)
 - [ ] Generics (мономорфизация)
 - [ ] CMake генерация

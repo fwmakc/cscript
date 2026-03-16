@@ -142,4 +142,99 @@ describe("CScriptCompiler", () => {
       expect(result.code).toContain("return NULL");
     });
   });
+
+  describe("structs", () => {
+    it("generates struct from interface", () => {
+      const code = `
+        interface Point {
+          x: f64,
+          y: f64,
+        }
+      `;
+      const result = compiler.compile(code);
+      expect(result.code).toContain("typedef struct {");
+      expect(result.code).toContain("double x;");
+      expect(result.code).toContain("double y;");
+      expect(result.code).toContain("} Point;");
+    });
+  });
+
+  describe("classes", () => {
+    it("generates struct from class", () => {
+      const code = `
+        class Player {
+          x: i32 = 0,
+          y: i32 = 0,
+        }
+      `;
+      const result = compiler.compile(code);
+      expect(result.code).toContain("typedef struct {");
+      expect(result.code).toContain("int32_t x;");
+      expect(result.code).toContain("} Player;");
+    });
+
+    it("generates constructor", () => {
+      const code = `
+        class Player {
+          x: i32 = 10,
+        }
+      `;
+      const result = compiler.compile(code);
+      expect(result.code).toContain("Player* Player_new()");
+      expect(result.code).toContain("malloc(sizeof(Player))");
+      expect(result.code).toContain("self->x = 10");
+    });
+
+    it("generates methods", () => {
+      const code = `
+        class Player {
+          x: i32 = 0,
+          move(dx: i32): void {
+            this.x += dx;
+          }
+        }
+      `;
+      const result = compiler.compile(code);
+      expect(result.code).toContain("void Player_move(Player* self, int32_t dx)");
+    });
+
+    it("generates new expression", () => {
+      const code = `
+        class Player {}
+        function main(): void {
+          let p = new Player();
+        }
+      `;
+      const result = compiler.compile(code);
+      expect(result.code).toContain("Player* p = Player_new()");
+    });
+
+    it("generates method calls", () => {
+      const code = `
+        class Player {
+          move(): void {}
+        }
+        function main(): void {
+          let p = new Player();
+          p.move();
+        }
+      `;
+      const result = compiler.compile(code);
+      expect(result.code).toContain("Player_move(p)");
+    });
+
+    it("generates property access with arrow", () => {
+      const code = `
+        class Player {
+          x: i32 = 0,
+        }
+        function main(): void {
+          let p = new Player();
+          print("%d", p.x);
+        }
+      `;
+      const result = compiler.compile(code);
+      expect(result.code).toContain("p->x");
+    });
+  });
 });
