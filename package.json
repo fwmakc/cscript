@@ -1,11 +1,11 @@
 {
-  "name": "cscript",
+  "name": "typescriptc",
   "version": "0.1.0",
   "description": "TypeScript to C Compiler with Rust-style memory management",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "cscript": "dist/index.js"
+    "tsc": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",

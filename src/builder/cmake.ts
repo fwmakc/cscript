@@ -83,7 +83,7 @@ export function writeCMake(config: ProjectConfig, outputDir: string, sourceFile:
 }
 
 export function loadConfig(projectDir: string): ProjectConfig | null {
-  const configPath = path.join(projectDir, "cscript.json");
+  const configPath = path.join(projectDir, "typescriptc.json");
   
   if (!fs.existsSync(configPath)) {
     return null;
@@ -97,12 +97,12 @@ export function createDefaultConfig(name: string): ProjectConfig {
   return {
     name,
     version: "1.0.0",
-    entry: "src/main.cs",
+    entry: "src/main.tsc",
     outDir: "dist",
   };
 }
 
 export function saveConfig(config: ProjectConfig, projectDir: string): void {
-  const configPath = path.join(projectDir, "cscript.json");
+  const configPath = path.join(projectDir, "typescriptc.json");
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 }

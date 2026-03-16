@@ -1,4 +1,4 @@
-# CScript
+# TypeScriptC
 
 TypeScript to C Compiler с системой управления памятью как в Rust (ownership, borrow checker).
 
@@ -13,18 +13,18 @@ npm run build
 
 ```bash
 # Компиляция в C
-node dist/index.js compile examples/hello.cs -o dist/hello.c
+tsc compile examples/hello.tsc -o dist/hello.c
 
 # Проверка типов и borrow checker
-node dist/index.js check examples/hello.cs
+tsc check examples/hello.tsc
 
 # Вывод в stdout
-node dist/index.js compile examples/hello.cs
+tsc compile examples/hello.tsc
 ```
 
 ## Пример
 
-**Input (hello.cs):**
+**Input (hello.tsc):**
 ```typescript
 @native("printf")
 declare function print(format: string, ...args: any): void;
@@ -56,8 +56,8 @@ int32_t main(void) {
 
 ### Примитивные
 
-| CScript | C Type |
-|---------|--------|
+| TypeScriptC | C Type |
+|-------------|--------|
 | number | int32_t |
 | i8 | int8_t |
 | i16 | int16_t |
@@ -76,16 +76,16 @@ int32_t main(void) {
 
 ### Ссылки
 
-| CScript | C Type |
-|---------|--------|
+| TypeScriptC | C Type |
+|-------------|--------|
 | &T | T* |
 | &mut T | T* |
 | T \| null | T* |
 
 ### Значения
 
-| CScript | C |
-|---------|---|
+| TypeScriptC | C |
+|-------------|---|
 | null | NULL |
 
 ## Ownership & Borrowing

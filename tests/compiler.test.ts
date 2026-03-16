@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { CScriptCompiler } from "../src/compiler/index.js";
+import { TypeScriptCCompiler } from "../src/compiler/index.js";
 
-describe("CScriptCompiler", () => {
-  const compiler = new CScriptCompiler();
+describe("TypeScriptCCompiler", () => {
+  const compiler = new TypeScriptCCompiler();
 
   describe("type mapping", () => {
     it("maps number to int32_t", () => {

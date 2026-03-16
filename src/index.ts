@@ -3,7 +3,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as child_process from "child_process";
-import { CScriptCompiler } from "./compiler/index.js";
+import { TypeScriptCCompiler } from "./compiler/index.js";
 import { BorrowChecker } from "./semantic/borrow-checker.js";
 import { loadConfig, saveConfig, createDefaultConfig, generateCMake } from "./builder/index.js";
 import * as ts from "typescript";
@@ -14,25 +14,25 @@ import { dirname } from "path";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const compiler = new CScriptCompiler();
+const compiler = new TypeScriptCCompiler();
 
 function printUsage(): void {
   console.log(`
-CScript - TypeScript to C Compiler
+TypeScriptC - TypeScript to C Compiler
 
 Usage:
-  cscript compile <file> [-o <output>]   Compile CScript to C
-  cscript check <file>                   Type and borrow check only
-  cscript build [--platform <name>]     Build project with CMake
-  cscript init <name>                    Create new project
-  cscript --help                           Show this help
+  tsc compile <file> [-o <output>]   Compile TypeScriptC to C
+  tsc check <file>                   Type and borrow check only
+  tsc build [--platform <name>]     Build project with CMake
+  tsc init <name>                    Create new project
+  tsc --help                           Show this help
 
 Examples:
-  cscript compile src/main.cs -o dist/main.c
-  cscript check src/main.cs
-  cscript build
-  cscript build --platform web
-  cscript init my-project
+  tsc compile src/main.tsc -o dist/main.c
+  tsc check src/main.tsc
+  tsc build
+  tsc build --platform web
+  tsc init my-project
 `);
 }
 
@@ -104,7 +104,7 @@ function buildProject(projectDir: string, options: { platform?: string }): void 
   const config = loadConfig(projectDir);
   
   if (!config) {
-    console.error(`Error: cscript.json not found in ${projectDir}`);
+    console.error(`Error: typescriptc.json not found in ${projectDir}`);
     process.exit(1);
   }
 
@@ -177,15 +177,15 @@ function main(): i32 {
 }
 `;
   
-  const mainFile = path.join(projectDir, "src", "main.cs");
+  const mainFile = path.join(projectDir, "src", "main.tsc");
   fs.writeFileSync(mainFile, mainContent);
   
   const config = createDefaultConfig(projectName);
   saveConfig(config, projectDir);
   
   console.log(`Created project: ${projectName}`);
-  console.log(`  Entry: src/main.cs`);
-  console.log(`  Run: cscript build`);
+  console.log(`  Entry: src/main.tsc`);
+  console.log(`  Run: tsc build`);
 }
 function formatCompileError(error: { message: string; line?: number; column?: number; code?: string }): string {
   let result = "";

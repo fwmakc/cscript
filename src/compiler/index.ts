@@ -58,7 +58,7 @@ export interface StructMonomorphization {
   specialized: string;
 }
 
-export class CScriptCompiler {
+export class TypeScriptCCompiler {
   private nativeFunctionMap: Map<string, string> = new Map();
   private structTypes: Map<string, StructInfo> = new Map();
   private classMethods: Map<string, MethodInfo[]> = new Map();

@@ -1,4 +1,4 @@
-# CScript — TypeScript to C Compiler
+# TypeScriptC — TypeScript to C Compiler
 
 Транспайлер из TypeScript-подобного синтаксиса в чистый C с системой управления памятью как в Rust (ownership, borrow checker, arena allocator).
 
@@ -11,7 +11,7 @@
 │                        COMPILER PIPELINE                             │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                      │
-│   Source Code (.cs / .tsc)                                           │
+│   Source Code (.tsc)                                                 │
 │        │                                                             │
 │        ▼                                                             │
 │   ┌─────────────────────────────────────────┐                        │
@@ -107,11 +107,11 @@ cscript/
 │   └── integration/
 │
 ├── examples/
-│   ├── hello.cs
-│   ├── generics.cs
+│   ├── hello.tsc
+│   ├── generics.tsc
 │   └── game/
-│       ├── main.cs
-│       └── cscript.json
+│       ├── main.tsc
+│       └── typescriptc.json
 │
 ├── package.json
 ├── tsconfig.json
@@ -134,7 +134,7 @@ cscript/
 
 ### Правила трансформации
 
-| CScript | C Code | Статус переменной |
+| TypeScriptC | C Code | Статус переменной |
 |---------|--------|-------------------|
 | `let x = new T()` | `T* x = T_new();` | Alive |
 | `func(x)` | `func(x);` | x → Moved |
@@ -187,7 +187,7 @@ cscript/
 
 ### Примитивные типы
 
-| CScript | C Type | Size |
+| TypeScriptC | C Type | Size |
 |---------|--------|------|
 | i8 | int8_t | 1 |
 | i16 | int16_t | 2 |
@@ -247,13 +247,13 @@ struct Vec<T> {
 
 ### Пример 1: Hello World
 
-**Input (CScript):**
+**Input (TypeScriptC):**
 ```typescript
 @native("printf")
 declare function print(format: string, ...args: any): void;
 
 function main(): i32 {
-    print("Hello, CScript!\n");
+    print("Hello, TypeScriptC!\n");
     return 0;
 }
 ```
@@ -264,14 +264,14 @@ function main(): i32 {
 #include <stdint.h>
 
 int32_t main() {
-    printf("Hello, CScript!\n");
+    printf("Hello, TypeScriptC!\n");
     return 0;
 }
 ```
 
 ### Пример 2: Ownership
 
-**Input (CScript):**
+**Input (TypeScriptC):**
 ```typescript
 function createPlayer(): Player {
     let p = new Player();  // p owns
@@ -303,7 +303,7 @@ int32_t main() {
 
 ### Пример 3: Borrowing
 
-**Input (CScript):**
+**Input (TypeScriptC):**
 ```typescript
 function calculateLength(s: &String): i32 {
     return s.length;
@@ -335,7 +335,7 @@ int32_t main() {
 
 ### Пример 4: Generics (мономорфизация)
 
-**Input (CScript):**
+**Input (TypeScriptC):**
 ```typescript
 struct Pair<T, U> {
     first: T,
@@ -379,13 +379,13 @@ int32_t main() {
 
 ---
 
-## Конфигурация проекта (cscript.json)
+## Конфигурация проекта (typescriptc.json)
 
 ```json
 {
   "name": "my_game",
   "version": "1.0.0",
-  "entry": "src/main.cs",
+  "entry": "src/main.tsc",
   "target": "bin",
   "outDir": "dist",
   
@@ -417,22 +417,22 @@ int32_t main() {
 
 ```bash
 # Компиляция в C
-cscript compile src/main.cs -o dist/main.c
+tsc compile src/main.tsc -o dist/main.c
 
 # Полная сборка с CMake
-cscript build
+tsc build
 
 # Сборка под конкретную платформу
-cscript build --platform dos
+tsc build --platform dos
 
 # Только проверка типов и borrow checker
-cscript check src/main.cs
+tsc check src/main.tsc
 
 # Инициализация нового проекта
-cscript init my-project
+tsc init my-project
 
 # Watch mode
-cscript watch
+tsc watch
 ```
 
 ---
@@ -476,7 +476,7 @@ endif()
 
 ```
 error[E0382]: use of moved value: `s`
-  --> src/main.cs:5:12
+  --> src/main.tsc:5:12
    |
 3  |     let s = String::from("hello");
    |         - move occurs because `s` has type `String`
@@ -492,7 +492,7 @@ error[E0382]: use of moved value: `s`
 
 ```
 error[E0308]: mismatched types
-  --> src/main.cs:7:12
+  --> src/main.tsc:7:12
    |
 7  |     return "hello";
    |            ^^^^^^^ expected `i32`, found `String`
