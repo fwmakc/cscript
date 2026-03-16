@@ -1,4 +1,5 @@
 export const TYPE_MAP: Record<string, string> = {
+  number: "int32_t",
   i8: "int8_t",
   i16: "int16_t",
   i32: "int32_t",
@@ -17,6 +18,7 @@ export const TYPE_MAP: Record<string, string> = {
 };
 
 export const COPY_TYPES = new Set([
+  "number",
   "i8", "i16", "i32", "i64",
   "u8", "u16", "u32", "u64",
   "f32", "f64", "bool",

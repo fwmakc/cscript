@@ -177,6 +177,7 @@ export class CScriptCompiler {
 
   private mapType(tsType: string): string {
     const typeMap: Record<string, string> = {
+      number: "int32_t",
       i8: "int8_t",
       i16: "int16_t",
       i32: "int32_t",
