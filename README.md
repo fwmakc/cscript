@@ -241,7 +241,7 @@ void Player_move(Player* self, int32_t dx, int32_t dy) {
 - [x] Class declarations (struct + methods)
 - [x] Generics (мономорфизация)
 - [x] Полный borrow checker (lifetimes, mutable/immutable borrows)
-- [ ] CMake генерация
+- [x] CMake генерация
 
 ## License
 
