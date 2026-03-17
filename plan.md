@@ -27,6 +27,38 @@ A TypeScript-inspired language that compiles to C and auto-generates build files
 - `let` — мутабельная переменная
 - `const` — иммутабельная (кроме классов — TBD)
 
+#### Функции
+
+- Ключевое слово: `function`
+  ```typescript
+  function add(a: i32, b: i32): i32 { return a + b }
+  ```
+- **Стрелочные функции** — сокращённый синтаксис, тип выводится:
+  ```typescript
+  const add = (a: i32, b: i32): i32 => a + b         // expression body
+  const add = (a: i32, b: i32): i32 => { return a + b } // block body
+  ```
+- **Анонимные функции** — `function` без имени, присваивается переменной или передаётся аргументом:
+  ```typescript
+  const add = function(a: i32, b: i32): i32 { return a + b }
+
+  array.sort(function(a: i32, b: i32): i32 { return a - b })
+  ```
+- **IIFE** — немедленный вызов функции:
+  ```typescript
+  ((a: i32, b: i32) => a + b)(1, 2)       // => 3
+  ((a: i32, b: i32) => { return a + b })(1, 2)
+  (function(a: i32, b: i32): i32 { return a + b })(1, 2)
+  ```
+- **Замыкания** — стрелочные функции захватывают переменные из внешнего скопа:
+  ```typescript
+  let multiplier = 3
+  const triple = (x: i32) => x * multiplier   // захватывает multiplier
+  ```
+  - Захват **по значению** для примитивов (копируется в момент создания замыкания)
+  - Захват **по ссылке** для сложных типов (следует правилам borrow checker)
+  - В C компилируется в struct с захваченными переменными + функцию принимающую этот struct
+
 #### Семантика передачи значений
 
 - **Примитивы** (`int`, `float`, `bool`, `char`, строки) — всегда **по значению** (copy)
@@ -278,7 +310,7 @@ target_link_libraries(myapp ~/.tsc/cache/libfoo@1.0.0/libfoo.a)
 - Под капотом компилируется в `Result` тип в C (не `setjmp`/`longjmp`)
 - Оператор `?` — пробрасывает ошибку наверх без boilerplate
   ```
-  fn readConfig(path: string): Config {
+  function readConfig(path: string): Config {
       let file = openFile(path)?
       let text = file.readAll()?
       return parseConfig(text)?
