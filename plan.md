@@ -24,36 +24,57 @@ A TypeScript-inspired language that compiles to C and auto-generates build files
 
 #### Переменные
 
-- `let` — мутабельная переменная
-- `const` — иммутабельная (кроме классов — TBD)
+- `let` — мутабельная переменная: можно переприсвоить, можно вызывать `mut` методы, можно передавать как `&mut`
+- `const` — иммутабельная: нельзя переприсвоить, нельзя вызывать `mut` методы, нельзя передавать как `&mut`
 
 #### Функции
 
 - Ключевое слово: `function`
   ```typescript
-  function add(a: i32, b: i32): i32 { return a + b }
+  function add(a: i32, b: i32): i32 {
+    return a + b;
+  }
   ```
 - **Стрелочные функции** — сокращённый синтаксис, тип выводится:
   ```typescript
-  const add = (a: i32, b: i32): i32 => a + b         // expression body
-  const add = (a: i32, b: i32): i32 => { return a + b } // block body
+  const add = (a: i32, b: i32): i32 => a + b; // expression body
+  const add = (a: i32, b: i32): i32 => {
+    return a + b;
+  }; // block body
   ```
 - **Анонимные функции** — `function` без имени, присваивается переменной или передаётся аргументом:
-  ```typescript
-  const add = function(a: i32, b: i32): i32 { return a + b }
 
-  array.sort(function(a: i32, b: i32): i32 { return a - b })
+  ```typescript
+  const add = function (a: i32, b: i32): i32 {
+    return a + b;
+  };
+
+  array.sort(function (a: i32, b: i32): i32 {
+    return a - b;
+  });
   ```
+
 - **IIFE** — немедленный вызов функции:
   ```typescript
-  ((a: i32, b: i32) => a + b)(1, 2)       // => 3
-  ((a: i32, b: i32) => { return a + b })(1, 2)
-  (function(a: i32, b: i32): i32 { return a + b })(1, 2)
+  ((a: i32, b: i32) => a + b)(
+    1,
+    2
+  )(
+    // => 3
+    (a: i32, b: i32) => {
+      return a + b;
+    }
+  )(
+    1,
+    2
+  )(function (a: i32, b: i32): i32 {
+    return a + b;
+  })(1, 2);
   ```
 - **Замыкания** — стрелочные функции захватывают переменные из внешнего скопа:
   ```typescript
-  let multiplier = 3
-  const triple = (x: i32) => x * multiplier   // захватывает multiplier
+  let multiplier = 3;
+  const triple = (x: i32) => x * multiplier; // захватывает multiplier
   ```
   - Захват **по значению** для примитивов (копируется в момент создания замыкания)
   - Захват **по ссылке** для сложных типов (следует правилам borrow checker)
@@ -97,10 +118,12 @@ A TypeScript-inspired language that compiles to C and auto-generates build files
 
 ### Memory Model
 
-- **Ownership + Borrow Checker** (Rust-inspired)
-- Каждый объект имеет одного владельца
-- Владение передаётся при присвоении (move semantics)
-- Заимствование через `&` (immutable) и `&mut` (mutable)
+- **Ownership + Borrow Checker** (Rust-inspired), подробнее в `borrow_checker.md`
+- Примитивы всегда копируются, бч не применяется
+- Сложные типы управляются бч
+- Владение передаётся при присвоении и при передаче в функцию (`arr: i32[]`)
+- Заимствование через тип параметра: `&T` (immutable), `&mut T` (mutable)
+- `&` только в сигнатуре — при вызове синтаксис чистый
 - Компилятор автоматически вставляет `free()` в сгенерированный C-код
 - Нет GC, нет ручного `free`
 
@@ -109,6 +132,67 @@ A TypeScript-inspired language that compiles to C and auto-generates build files
 - Синтаксис как в TypeScript: именованные `export` / `import { } from ""`
 - Один файл = один модуль
 - **Циклические импорты разрешены** — компилятор автоматически генерирует forward declarations в C
+
+#### Порядок инициализации модулей
+
+Каждый модуль с module-level переменными получает `_init()` функцию в C. Порядок вызовов определяется **топологической сортировкой** графа импортов — зависимости инициализируются раньше.
+
+Для правильного порядка компилятор строит граф зависимостей и делает топологическую сортировку. Результат — одна функция `tsc_init_all()` с правильным порядком:
+
+```c
+// сгенерировано компилятором
+static void tsc_init_all() {
+    a_type_init();  // нет зависимостей — первый
+    bar_init();     // зависит от a_type
+    foo_init();     // зависит от a_type и bar
+}
+
+int main() {
+    tsc_init_all();
+    // ... код пользователя
+}
+```
+
+Два случая циклических зависимостей:
+
+- **Цикл через типы и функции** — разрешён, компилятор генерирует forward declarations в .h файлах
+- **Цикл через module-level переменные** — физически неразрешимо, ошибка компилятора:
+  ```
+  error: circular initialization dependency detected
+    src/a.tsc:2  aValue depends on bValue
+    src/b.tsc:2  bValue depends on aValue
+  hint: move one of these values into a function
+  ```
+  Пример в коде:
+  ```typescript
+  a.tsc: const aVal = bFunc()   // нужен b
+  b.tsc: const bVal = aFunc()   // нужен a
+  // кто инициализируется первым?
+  ```
+
+#### Точка входа
+
+Файл с top-level statements (исполняемый код вне функций) — и есть entry point. Top-level statements синтаксически разрешены в любом файле.
+
+Entry point определяется в порядке приоритета:
+
+1. **Конфиг** — поле `"entry"` в `tsc.packages.json`:
+   ```json
+   { "entry": "src/foo.tsc" }
+   ```
+2. **Конвенция** — файл `main.tsc` в корне проекта (там же где `tsc.packages.json`)
+
+Если ни конфиг ни конвенция не указывают entry point — проект считается библиотекой, `main()` не генерируется.
+
+Ошибки:
+
+- `"entry"` указан, но в файле нет top-level statements:
+  ```
+  error: entry file has no top-level statements
+    --> src/foo.tsc
+  hint: add executable code or remove "entry" from tsc.packages.json
+  ```
+
 - Типы импортов по источнику:
   - `"./path"` — локальный файл
   - `"libc"`, `"libm"` и др. — встроенные декларации + генерирует `#include <...>` в C
